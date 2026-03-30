@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BV-Vec Visualization</title>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:     #0f1117;
+  --panel:  #1a1d27;
+  --border: #2a2d3a;
+  --text:   #e8eaf0;
+  --muted:  #6b7280;
+  --accent: #4f8ef7;
+  --hover:  #252836;
+  --sidebar-w: 320px;
+}
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+/* Header */
+#header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#header h1 { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: .5px; white-space: nowrap; }
+.tabs { display: flex; gap: 4px; }
+.tab-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; transition: all .2s; }
+.tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.tab-btn:hover:not(.active) { background: var(--hover); color: var(--text); }
+#header-info { margin-left: auto; font-size: 11px; color: var(--muted); }
+
+/* Main layout */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* Sidebar */
+.sidebar { width: var(--sidebar-w); background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+.sidebar-section { padding: 12px; border-bottom: 1px solid var(--border); }
+.sidebar-section h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 8px; }
+.sidebar-scroll { flex: 1; overflow-y: auto; }
+.sidebar-scroll::-webkit-scrollbar { width: 4px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* Cluster toggles */
+#cluster-toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+.cluster-chip { display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; border: 1.5px solid transparent; cursor: pointer; font-size: 11px; font-weight: 600; transition: opacity .2s, transform .1s; user-select: none; }
+.cluster-chip:hover { transform: scale(1.05); }
+.cluster-chip.off { opacity: .3; }
+.cluster-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cluster-count { font-size: 10px; font-weight: 400; opacity: .7; }
+.cluster-name-label { font-size: 10px; font-weight: 700; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Cluster profile panel */
+#cluster-profile-panel { display: none; padding: 12px; border-top: 1px solid var(--border); }
+.profile-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.profile-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.profile-name { font-size: 14px; font-weight: 700; }
+.profile-id { font-size: 11px; color: var(--muted); }
+.profile-desc { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+.profile-group-bars { margin-bottom: 10px; }
+.group-bar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.group-bar-label { font-size: 10px; color: var(--muted); width: 68px; text-align: right; flex-shrink: 0; }
+.group-bar-track { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.group-bar-fill { height: 100%; border-radius: 3px; transition: width .4s; }
+.group-bar-val { font-size: 10px; color: var(--muted); width: 36px; text-align: right; flex-shrink: 0; }
+.profile-top-features { margin-bottom: 10px; }
+.top-feat-title { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 5px; }
+.top-feat-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.top-feat-name { font-size: 10px; flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-feat-z { font-size: 10px; font-weight: 700; width: 44px; text-align: right; }
+.top-feat-z.pos { color: #4daf4a; }
+.top-feat-z.neg { color: #e41a1c; }
+.profile-methodology { font-size: 10px; color: #444860; line-height: 1.5; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+.profile-methodology a { color: #4f6ea0; text-decoration: none; }
+
+/* Model info section */
+.model-info-row { display: flex; justify-content: space-between; gap: 6px; padding: 2px 0; }
+.model-info-row .k { font-size: 10px; color: var(--muted); }
+.model-info-row .v { font-size: 10px; color: var(--text); font-weight: 600; text-align: right; }
+.model-info-row .v.highlight { color: var(--accent); }
+.model-info-row .v.diff { color: #f28e2b; }
+.model-section-title { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin: 8px 0 4px; }
+
+/* Cell info panel */
+#cell-panel { padding: 12px; }
+#cell-panel .cell-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+#cell-panel .cell-coord { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+.chart-wrap { position: relative; height: 560px; }
+
+/* 시트 탭바: 데스크탑에서는 숨김 */
+.sheet-tab-bar { display: none; }
+
+/* Similarity tab */
+#sim-controls { display: flex; gap: 8px; align-items: center; }
+.mode-btn { flex: 1; padding: 7px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; text-align: center; transition: all .2s; }
+.mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+#sim-hint { font-size: 11px; color: var(--muted); padding: 8px 0; }
+#sim-query-info { font-size: 11px; color: var(--text); padding: 4px 0 8px; display: none; }
+
+/* Result list */
+.result-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }
+.result-item:hover { background: var(--hover); }
+.result-item.active { background: rgba(79,142,247,.15); border-left: 2px solid var(--accent); padding-left: 10px; }
+.result-rank { font-size: 11px; font-weight: 700; color: var(--muted); width: 18px; text-align: right; }
+.result-cluster-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.result-body { flex: 1; }
+.result-sim { font-size: 13px; font-weight: 700; color: var(--text); }
+.result-sim-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 3px; }
+.result-sim-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+.result-loc { font-size: 10px; color: var(--muted); margin-top: 2px; }
+#no-results { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 12px; }
+
+/* Map */
+#map { flex: 1; position: relative; }
+.mapboxgl-ctrl-bottom-left, .mapboxgl-ctrl-bottom-right { font-size: 10px; }
+
+/* Popup override for dark theme */
+.mapboxgl-popup-content { background: var(--panel) !important; color: var(--text) !important; border-radius: 8px !important; padding: 10px 12px !important; font-size: 12px !important; box-shadow: 0 4px 20px rgba(0,0,0,.5) !important; border: 1px solid var(--border) !important; }
+.mapboxgl-popup-tip { display: none !important; }
+.popup-title { font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.popup-row { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; margin-top: 2px; }
+.popup-row span:last-child { color: var(--text); font-weight: 600; }
+.popup-cluster-name { font-size: 10px; color: var(--muted); margin-bottom: 8px; font-style: italic; }
+.popup-search-btn { width: 100%; margin-top: 10px; padding: 7px 0; border-radius: 6px; border: none; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; transition: opacity .2s; }
+.popup-search-btn:hover { opacity: .85; }
+.popup-search-btn:active { opacity: .7; }
+
+/* Style toggle button */
+#style-toggle { position: absolute; top: 110px; right: 10px; z-index: 10; width: 30px; height: 30px; border-radius: 4px; background: var(--panel); border: 1px solid var(--border); color: var(--text); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .2s; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+#style-toggle:hover { background: var(--hover); }
+
+/* Spinner */
+#loading { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; z-index: 999; }
+.spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading p { color: var(--muted); font-size: 13px; }
+
+/* ── 모바일 하단 시트 ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+  :root { --sheet-peek: 56px; }
+
+  /* 헤더 압축 */
+  #header { padding: 8px 12px; gap: 10px; }
+  #header h1 { font-size: 13px; }
+  .tab-btn { padding: 5px 12px; font-size: 11px; }
+  #header-info { display: none; }
+
+  /* 메인: 지도가 전체, 시트가 위에 올라옴 */
+  #main { position: relative; }
+
+  /* 사이드바 → 하단 시트로 */
+  .sidebar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    width: 100% !important;
+    height: 70vh;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    transform: translateY(calc(100% - var(--sheet-peek)));
+    transition: transform .35s cubic-bezier(.32,.72,0,1);
+    z-index: 20;
+    box-shadow: 0 -4px 24px rgba(0,0,0,.5);
+    /* 항상 flex로 유지 — display:none 대신 transform으로 숨김 */
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar.sheet-open {
+    transform: translateY(0);
+  }
+  /* 숨겨진 탭 사이드바: 완전히 아래로 */
+  .sidebar.sheet-hidden {
+    transform: translateY(100%);
+    pointer-events: none;
+  }
+
+  /* 시트 탭바: 모바일에서만 표시 */
+  .sheet-tab-bar { display: flex; }
+
+  /* 드래그 핸들 */
+  .sidebar::before {
+    content: '';
+    display: block;
+    width: 36px; height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 8px auto 0;
+    flex-shrink: 0;
+  }
+
+  /* 시트 탭 헤더 (peek 영역에 보이는 탭 제목) */
+  .sheet-tab-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 16px 8px;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .sheet-tab-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    flex: 1;
+  }
+  .sheet-tab-arrow {
+    font-size: 12px;
+    color: var(--muted);
+    transition: transform .3s;
+  }
+  .sidebar.sheet-open .sheet-tab-arrow { transform: rotate(180deg); }
+
+  /* 지도 하단 패딩: 시트 peek 높이만큼 */
+  #map { padding-bottom: var(--sheet-peek); }
+
+  /* 스타일 토글 — 시트 위로 */
+  #style-toggle { top: auto; bottom: calc(var(--sheet-peek) + 10px); right: 10px; }
+
+  /* 클러스터 칩: 터치 영역 확대 */
+  .cluster-chip { padding: 6px 12px; font-size: 12px; }
+  .cluster-name-label { max-width: 90px; }
+
+  /* 결과 아이템: 터치 높이 */
+  .result-item { padding: 12px 14px; }
+  .result-sim { font-size: 14px; }
+
+  /* 팝업 검색 버튼: 더 크게 */
+  .popup-search-btn { padding: 10px 0; font-size: 13px; }
+
+  /* 차트 높이 (모바일) */
+  .chart-wrap { height: 400px; }
+
+  /* 프로파일 패널 */
+  .profile-name { font-size: 13px; }
+
+  /* 맵박스 컨트롤 이동 — 시트 위로 */
+  .mapboxgl-ctrl-bottom-right { bottom: calc(var(--sheet-peek) + 4px) !important; }
+  .mapboxgl-ctrl-bottom-left  { bottom: calc(var(--sheet-peek) + 4px) !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div><p>데이터 로딩 중...</p></div>
+
+<div id="header">
+  <h1>BV-Vec</h1>
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-cluster" onclick="switchTab('cluster')">클러스터 맵</button>
+    <button class="tab-btn" id="tab-similarity" onclick="switchTab('similarity')">유사지역 검색</button>
+  </div>
+  <span id="header-info"></span>
+</div>
+
+<div id="main">
+  <!-- ── 클러스터 탭 사이드바 ── -->
+  <div class="sidebar" id="sidebar-cluster">
+    <!-- 모바일: 탭바 (터치로 시트 열기/닫기) -->
+    <div class="sheet-tab-bar" onclick="toggleSheet('cluster')">
+      <div class="sheet-tab-title">클러스터 맵</div>
+      <div class="sheet-tab-arrow">&#8963;</div>
+    </div>
+    <div class="sidebar-section">
+      <h3>클러스터 토글 <span style="font-size:10px;color:var(--muted);text-transform:none;letter-spacing:0">(클릭: 토글 / 더블클릭: 상세)</span></h3>
+      <div id="cluster-toggles"></div>
+    </div>
+    <div class="sidebar-scroll">
+      <div id="cluster-profile-panel"></div>
+      <div id="cell-panel">
+        <div style="color:var(--muted);font-size:12px;padding:8px">셀을 클릭하면 피처를 표시합니다</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 유사지역 탭 사이드바 ── -->
+  <div class="sidebar sheet-hidden" id="sidebar-similarity" style="display:none">
+    <div class="sheet-tab-bar" onclick="toggleSheet('similarity')">
+      <div class="sheet-tab-title">유사지역 검색</div>
+      <div class="sheet-tab-arrow">&#8963;</div>
+    </div>
+    <div class="sidebar-section">
+      <div id="sim-hint">지도에서 격자를 선택하고 팝업의 버튼을 눌러 검색하세요</div>
+      <div id="sim-query-info"></div>
+    </div>
+    <div class="sidebar-scroll" id="result-list">
+      <div id="no-results" style="display:block">결과가 없습니다</div>
+    </div>
+  </div>
+
+  <div id="map">
+    <button id="style-toggle" title="지도 스타일 전환" onclick="toggleMapStyle()">&#9790;</button>
+  </div>
+</div>
+
+<script>
+// ── 전역 상태 ─────────────────────────────────────────────────────────────────
+let cfg = null;
+let map = null;
+let featureChart = null;
+let activeTab = 'cluster';
+let hiddenClusters = new Set();
+let activeResultIdx = -1;
+let isDarkStyle = true;
+let mapLoaded = false;
+let cellsGeojson = null;
+let allResultFeatures = [];
+let activeProfileCid = -1;
+
+// 팝업 (유사도 검색용)
+let simPopup = null;
+// 호버용 팝업
+let hoverPopup = null;
+// 선택된 셀 (유사도 탭)
+let simSelectedCell = null;  // {lon, lat, emb_idx}
+
+// ── 초기화 ───────────────────────────────────────────────────────────────────
+async function init() {
+  cfg = await fetch('/api/config').then(r => r.json());
+
+  mapboxgl.accessToken = cfg.mapbox_token;
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/dark-v11',
+    center: [127.0, 37.55],
+    zoom: 10,
+    minZoom: 8,
+  });
+
+  map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+  map.addControl(new mapboxgl.ScaleControl(), 'bottom-right');
+
+  hoverPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 6 });
+  simPopup   = new mapboxgl.Popup({ closeButton: true, closeOnClick: false, offset: 6, maxWidth: '220px' });
+
+  map.on('load', async () => {
+    mapLoaded = true;
+    document.getElementById('header-info').textContent =
+      `${cfg.n_cells.toLocaleString()}개 셀 · ${cfg.n_clusters}개 클러스터`;
+
+    await loadCellLayers();
+    buildClusterToggles();
+    setupMapEvents();
+    applyLayout();
+    document.getElementById('loading').style.display = 'none';
+  });
+}
+
+// ── 레이어 소스 초기화 (스타일 전환 후 재사용) ──────────────────────────────
+async function loadCellLayers() {
+  if (!cellsGeojson) {
+    cellsGeojson = await fetch('/api/cells.json').then(r => r.json());
+  }
+
+  map.addSource('cells', { type: 'geojson', data: cellsGeojson });
+
+  const colorExpr = ['match', ['get', 'cluster'],
+    ...cfg.cluster_colors.flatMap((c, i) => [i, c]),
+    '#888'
+  ];
+
+  map.addLayer({
+    id: 'cells-fill',
+    type: 'fill',
+    source: 'cells',
+    paint: {
+      'fill-color': colorExpr,
+      'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.9, 0.65],
+    },
+  });
+
+  map.addLayer({
+    id: 'cells-line',
+    type: 'line',
+    source: 'cells',
+    paint: {
+      'line-color': ['case', ['boolean', ['feature-state', 'selected'], false], '#fff', 'transparent'],
+      'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 2.5, 0],
+    },
+  });
+
+  map.addSource('query', { type: 'geojson', data: emptyFC() });
+  map.addLayer({ id: 'query-fill', type: 'fill', source: 'query',
+    paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.35 } });
+  map.addLayer({ id: 'query-line', type: 'line', source: 'query',
+    paint: { 'line-color': '#ffffff', 'line-width': 2.5 } });
+
+  map.addSource('results', { type: 'geojson', data: emptyFC() });
+  map.addLayer({ id: 'results-fill', type: 'fill', source: 'results',
+    paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.8 } });
+  map.addLayer({ id: 'results-line', type: 'line', source: 'results',
+    paint: { 'line-color': ['get', 'color'], 'line-width': 1.5 } });
+
+  map.addSource('result-selected', { type: 'geojson', data: emptyFC() });
+  map.addLayer({ id: 'result-selected-line', type: 'line', source: 'result-selected',
+    paint: { 'line-color': '#ffffff', 'line-width': 3 } });
+
+  // 필터 재적용
+  applyClusterFilter();
+
+  // 이벤트 재등록
+  setupMapEvents();
+}
+
+function emptyFC() { return { type: 'FeatureCollection', features: [] }; }
+
+// ── 지도 스타일 토글 ──────────────────────────────────────────────────────────
+function toggleMapStyle() {
+  isDarkStyle = !isDarkStyle;
+  const style = isDarkStyle
+    ? 'mapbox://styles/mapbox/dark-v11'
+    : 'mapbox://styles/mapbox/light-v11';
+  const btn = document.getElementById('style-toggle');
+  btn.innerHTML = isDarkStyle ? '&#9790;' : '&#9728;';
+
+  map.setStyle(style);
+
+  // style.load 이벤트에서 레이어 재추가
+  map.once('style.load', () => {
+    loadCellLayers();
+  });
+}
+
+// ── 클러스터 토글 UI ──────────────────────────────────────────────────────────
+function buildClusterToggles() {
+  const container = document.getElementById('cluster-toggles');
+  container.innerHTML = '';
+  for (let i = 0; i < cfg.n_clusters; i++) {
+    const c = cfg.cluster_colors[i];
+    const count = cfg.cluster_counts[String(i)] || 0;
+    const profile = cfg.cluster_profiles && cfg.cluster_profiles[String(i)];
+    const name = profile ? profile.name : `C${i}`;
+
+    const chip = document.createElement('div');
+    chip.className = 'cluster-chip';
+    chip.id = `chip-${i}`;
+    chip.style.borderColor = c + '88';
+    chip.style.backgroundColor = c + '22';
+    chip.title = profile ? profile.desc : '';
+
+    chip.innerHTML = `
+      <div class="cluster-dot" style="background:${c}"></div>
+      <div>
+        <div class="cluster-name-label">${name}</div>
+        <div class="cluster-count">${count.toLocaleString()}개</div>
+      </div>
+    `;
+
+    // 클릭: 토글 ON/OFF
+    chip.addEventListener('click', (e) => {
+      if (e.detail === 1) {
+        // single click: 300ms 후 실행 (dblclick 충돌 방지)
+        chip._clickTimer = setTimeout(() => toggleCluster(i), 250);
+      }
+    });
+    // 더블클릭: 프로파일 보기
+    chip.addEventListener('dblclick', (e) => {
+      clearTimeout(chip._clickTimer);
+      showClusterProfile(i);
+    });
+
+    container.appendChild(chip);
+  }
+}
+
+function toggleCluster(id) {
+  const chip = document.getElementById(`chip-${id}`);
+  if (hiddenClusters.has(id)) {
+    hiddenClusters.delete(id);
+    chip.classList.remove('off');
+  } else {
+    hiddenClusters.add(id);
+    chip.classList.add('off');
+  }
+  applyClusterFilter();
+}
+
+function applyClusterFilter() {
+  if (!map.getLayer('cells-fill')) return;
+  if (hiddenClusters.size === 0) {
+    map.setFilter('cells-fill', null);
+    map.setFilter('cells-line', null);
+  } else {
+    const visible = Array.from({ length: cfg.n_clusters }, (_, i) => i)
+                        .filter(i => !hiddenClusters.has(i));
+    const f = ['in', ['get', 'cluster'], ['literal', visible]];
+    map.setFilter('cells-fill', f);
+    map.setFilter('cells-line', f);
+  }
+}
+
+// ── 클러스터 프로파일 패널 ────────────────────────────────────────────────────
+function showClusterProfile(cid) {
+  const profile = cfg.cluster_profiles && cfg.cluster_profiles[String(cid)];
+  if (!profile) return;
+
+  activeProfileCid = cid;
+  const c = cfg.cluster_colors[cid];
+  const panel = document.getElementById('cluster-profile-panel');
+
+  // 그룹 z-score 바
+  const maxZ = Math.max(...Object.values(profile.group_z).map(Math.abs), 1);
+  const groupBars = Object.entries(profile.group_z).map(([gname, z]) => {
+    const gc = cfg.group_colors ? cfg.group_colors[gname] : '#4f8ef7';
+    const pct = Math.min(100, Math.abs(z) / maxZ * 100);
+    const sign = z >= 0 ? '+' : '';
+    return `
+      <div class="group-bar-row">
+        <div class="group-bar-label">${gname}</div>
+        <div class="group-bar-track">
+          <div class="group-bar-fill" style="width:${pct}%;background:${gc}"></div>
+        </div>
+        <div class="group-bar-val ${z > 0.3 ? 'top-feat-z pos' : z < -0.3 ? 'top-feat-z neg' : ''}">${sign}${z.toFixed(2)}</div>
+      </div>`;
+  }).join('');
+
+  // top features
+  const topFeatRows = profile.top_features.map(f => {
+    const sign = f.z >= 0 ? '+' : '';
+    const cls = f.z > 0 ? 'pos' : 'neg';
+    const chIdx = cfg.channel_names.indexOf(f.name);
+    const krName = (cfg.channel_names_kr && chIdx >= 0) ? cfg.channel_names_kr[chIdx] : f.name.replace(/_/g,' ');
+    const gc = cfg.group_colors && cfg.channel_groups
+      ? (Object.entries(cfg.channel_groups).find(([g, gd]) => gd.indices.includes(chIdx)) || [null, {color:'#888'}])[1].color
+      : '#888';
+    return `
+      <div class="top-feat-row">
+        <div style="width:8px;height:8px;border-radius:2px;background:${gc};flex-shrink:0"></div>
+        <div class="top-feat-name" title="${f.name}">${krName}</div>
+        <div class="top-feat-z ${cls}">${sign}${f.z.toFixed(2)}σ</div>
+      </div>`;
+  }).join('');
+
+  const mi = cfg.model_info;
+  const lrDiff = parseFloat(mi.s2vec_lr) !== parseFloat(mi.lr.split(' ')[0])
+    ? `<span class="v diff">${mi.s2vec_lr}</span>`
+    : `<span class="v">${mi.s2vec_lr}</span>`;
+
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="profile-header">
+      <div class="profile-dot" style="background:${c}"></div>
+      <div class="profile-name">Cluster ${cid} — ${profile.name}</div>
+      <div style="margin-left:auto;font-size:10px;color:var(--muted);cursor:pointer" onclick="hideClusterProfile()">✕</div>
+    </div>
+    <div class="profile-desc">${profile.desc}</div>
+    <div class="profile-group-bars">
+      <div class="top-feat-title">그룹별 특징 (전체 평균 대비 z-score)</div>
+      ${groupBars}
+    </div>
+    <div class="profile-top-features">
+      <div class="top-feat-title">주요 채널 (|z-score| 상위)</div>
+      ${topFeatRows}
+    </div>
+    <div class="profile-methodology">
+      <div class="model-section-title">BV-Vec 모델 정보</div>
+      <div class="model-info-row"><span class="k">데이터</span><span class="v">BigValue tb_grid_total</span></div>
+      <div class="model-info-row"><span class="k">기준 시점</span><span class="v highlight">${mi.timepoint}</span></div>
+      <div class="model-info-row"><span class="k">특징 채널</span><span class="v">${mi.n_features}개 · ${mi.grid_size} 패치</span></div>
+      <div class="model-info-row"><span class="k">아키텍처</span><span class="v">${mi.encoder}</span></div>
+      <div class="model-info-row"><span class="k">임베딩 차원</span><span class="v">${mi.embed_dim}dim</span></div>
+      <div class="model-info-row"><span class="k">마스크 비율</span><span class="v">${mi.mask_ratio}</span></div>
+      <div class="model-info-row"><span class="k">배치 / 에포크</span><span class="v">${mi.batch_size} / ${mi.epochs}</span></div>
+      <div class="model-info-row"><span class="k">최적 에포크</span><span class="v highlight">epoch ${mi.best_epoch} · val_loss ${mi.val_loss}</span></div>
+      <div class="model-section-title" style="margin-top:10px">학습률 비교</div>
+      <div class="model-info-row"><span class="k">BV-Vec LR</span><span class="v highlight">${mi.lr}</span></div>
+      <div class="model-info-row"><span class="k">BV-Vec WD</span><span class="v">${mi.weight_decay}</span></div>
+      <div class="model-info-row"><span class="k">Optimizer</span><span class="v">${mi.optimizer}</span></div>
+      <div class="model-section-title" style="margin-top:6px;color:#4f6ea0">S2Vec (Google, arXiv:2504.16942)</div>
+      <div class="model-info-row"><span class="k">S2Vec base LR</span>${lrDiff}</div>
+      <div class="model-info-row"><span class="k">S2Vec WD</span><span class="v">${mi.s2vec_wd}</span></div>
+      <div class="model-info-row"><span class="k">S2Vec Epochs</span><span class="v">${mi.s2vec_epochs}</span></div>
+      <div class="model-info-row"><span class="k">Masking</span><span class="v">${mi.s2vec_mask}</span></div>
+      <div style="margin-top:6px;font-size:10px;color:#444860;line-height:1.4">
+        * S2Vec는 base_lr × batch/256 linear scaling 적용.
+        BV-Vec는 lr=1e-4 고정 (batch=128 기준 scaled ~6.25e-5 equiv.)
+        Warmup ${mi.warmup_epochs || 20} epoch 후 코사인 감쇠, min_lr=${mi.min_lr}.
+      </div>
+    </div>
+  `;
+}
+
+function hideClusterProfile() {
+  document.getElementById('cluster-profile-panel').style.display = 'none';
+  activeProfileCid = -1;
+}
+
+// ── 지도 이벤트 ───────────────────────────────────────────────────────────────
+let hoveredId = null;
+let selectedId = null;
+
+function setupMapEvents() {
+  // 이전 핸들러 제거 후 재등록
+  map.off('mousemove', 'cells-fill', onCellHover);
+  map.off('mouseleave', 'cells-fill', onCellLeave);
+  map.off('click', 'cells-fill', onCellClick);
+
+  map.on('mousemove', 'cells-fill', onCellHover);
+  map.on('mouseleave', 'cells-fill', onCellLeave);
+  map.on('click', 'cells-fill', onCellClick);
+}
+
+function onCellHover(e) {
+  map.getCanvas().style.cursor = 'pointer';
+  if (e.features.length > 0) {
+    if (hoveredId !== null)
+      map.setFeatureState({ source: 'cells', id: hoveredId }, { hover: false });
+    hoveredId = e.features[0].id;
+    map.setFeatureState({ source: 'cells', id: hoveredId }, { hover: true });
+
+    const p = e.features[0].properties;
+    const color = cfg.cluster_colors[p.cluster];
+    const profile = cfg.cluster_profiles && cfg.cluster_profiles[String(p.cluster)];
+    const clusterName = profile ? profile.name : `Cluster ${p.cluster}`;
+
+    hoverPopup.setLngLat(e.lngLat).setHTML(`
+      <div class="popup-title">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}"></span>
+        ${clusterName}
+      </div>
+      <div class="popup-row"><span>Cell ID</span><span>${p.id}</span></div>
+      <div class="popup-row"><span>UTM</span><span>(${p.cx}, ${p.cy})</span></div>
+    `).addTo(map);
+  }
+}
+
+function onCellLeave() {
+  map.getCanvas().style.cursor = '';
+  if (hoveredId !== null)
+    map.setFeatureState({ source: 'cells', id: hoveredId }, { hover: false });
+  hoveredId = null;
+  hoverPopup.remove();
+}
+
+function onCellClick(e) {
+  const feat = e.features[0];
+  const p = feat.properties;
+
+  if (activeTab === 'cluster') {
+    // 클러스터 탭: 셀 피처 표시 + 선택 하이라이트
+    showCellInfo(p.id);
+    if (selectedId !== null)
+      map.setFeatureState({ source: 'cells', id: selectedId }, { selected: false });
+    selectedId = feat.id;
+    map.setFeatureState({ source: 'cells', id: selectedId }, { selected: true });
+
+  } else {
+    // 유사도 탭: 셀 선택 + 팝업 with "유사도 검색" 버튼
+    selectSimCell(feat, e.lngLat);
+  }
+}
+
+// ── 유사도 탭: 셀 선택 (팝업) ────────────────────────────────────────────────
+function selectSimCell(feat, lngLat) {
+  const p = feat.properties;
+  const color = cfg.cluster_colors[p.cluster];
+  const profile = cfg.cluster_profiles && cfg.cluster_profiles[String(p.cluster)];
+  const clusterName = profile ? profile.name : `Cluster ${p.cluster}`;
+
+  // 선택 하이라이트
+  if (selectedId !== null)
+    map.setFeatureState({ source: 'cells', id: selectedId }, { selected: false });
+  selectedId = feat.id;
+  map.setFeatureState({ source: 'cells', id: selectedId }, { selected: true });
+
+  simSelectedCell = { lon: lngLat.lng, lat: lngLat.lat, emb_idx: p.id };
+
+  const modeLabel = searchMode === 'area' ? '3x3 영역' : '단일 셀';
+
+  simPopup
+    .setLngLat(lngLat)
+    .setHTML(`
+      <div class="popup-title">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}"></span>
+        ${clusterName}
+      </div>
+      <div class="popup-row"><span>Cell ID</span><span>${p.id}</span></div>
+      <div class="popup-row"><span>UTM</span><span>(${p.cx}, ${p.cy})</span></div>
+      <button class="popup-search-btn" onclick="runSimilaritySearch(${lngLat.lng}, ${lngLat.lat})">
+        유사도 검색
+      </button>
+    `)
+    .addTo(map);
+}
+
+// ── 셀 피처 패널 (클러스터 탭) ───────────────────────────────────────────────
+async function showCellInfo(emb_idx) {
+  const data = await fetch(`/api/cell/${emb_idx}`).then(r => r.json());
+  if (data.error) return;
+
+  const c = cfg.cluster_colors[data.cluster];
+  const profile = cfg.cluster_profiles && cfg.cluster_profiles[String(data.cluster)];
+  const clusterName = profile ? profile.name : `Cluster ${data.cluster}`;
+  const panel = document.getElementById('cell-panel');
+
+  panel.innerHTML = `
+    <div class="cell-title">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${c}"></span>
+      ${clusterName}
+      <span style="font-size:11px;color:var(--muted);font-weight:400">· ID ${data.emb_idx}</span>
+    </div>
+    <div class="cell-coord">UTM (${data.cx}, ${data.cy})</div>
+    <div class="chart-wrap"><canvas id="feat-chart"></canvas></div>
+  `;
+
+  renderFeatureChart(data.feat_norm, data.ch_names);
+}
+
+function renderFeatureChart(featNorm, chNames) {
+  if (featureChart) featureChart.destroy();
+
+  const krNames = cfg.channel_names_kr || chNames.map(n => n.replace(/_/g, ' '));
+
+  const bgColors = chNames.map((_, i) => {
+    for (const [gname, gdata] of Object.entries(cfg.channel_groups)) {
+      if (gdata.indices.includes(i)) return gdata.color + 'cc';
+    }
+    return '#888';
+  });
+
+  const ctx = document.getElementById('feat-chart').getContext('2d');
+  featureChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: krNames,
+      datasets: [{
+        data: featNorm,
+        backgroundColor: bgColors,
+        borderWidth: 0,
+        barThickness: 6,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.parsed.x.toFixed(3)} (normalized)`,
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: '#2a2d3a' },
+          ticks: { color: '#6b7280', font: { size: 9 } },
+        },
+        y: {
+          grid: { display: false },
+          ticks: { color: '#9ca3af', font: { size: 9 }, maxTicksLimit: 46 },
+        }
+      }
+    }
+  });
+}
+
+// ── 유사도 검색 ───────────────────────────────────────────────────────────────
+async function runSimilaritySearch(lon, lat) {
+  // 팝업 닫기
+  simPopup.remove();
+
+  const hint = document.getElementById('sim-hint');
+  const queryInfo = document.getElementById('sim-query-info');
+  hint.textContent = '검색 중...';
+  queryInfo.style.display = 'none';
+
+  document.getElementById('result-list').innerHTML =
+    '<div id="no-results" style="display:none"></div>';
+
+  const data = await fetch('/api/similar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lon, lat, mode: searchMode, top_k: 20 })
+  }).then(r => r.json());
+
+  hint.textContent = '지도에서 격자를 선택하고 팝업의 버튼을 눌러 검색하세요';
+  queryInfo.style.display = 'block';
+  queryInfo.textContent = `기준: (${lon.toFixed(4)}, ${lat.toFixed(4)}) · 상위 ${data.results ? data.results.length : 0}개`;
+
+  if (!data.results || data.results.length === 0) {
+    document.getElementById('result-list').innerHTML =
+      '<div id="no-results" style="display:block">해당 지역에 데이터가 없습니다</div>';
+    return;
+  }
+
+  updateQueryLayer(data.query);
+  await buildResultLayer(data.results);
+  renderResultList(data.results);
+}
+
+async function updateQueryLayer(queryCells) {
+  const ids = new Set(queryCells.map(q => q.emb_idx));
+  const feats = cellsGeojson.features.filter(f => ids.has(f.properties.id));
+  map.getSource('query').setData({ type: 'FeatureCollection', features: feats });
+
+  if (feats.length > 0) {
+    const coords = feats.flatMap(f => f.geometry.coordinates[0]);
+    const lons = coords.map(c => c[0]);
+    const lats = coords.map(c => c[1]);
+    map.fitBounds(
+      [[Math.min(...lons)-0.02, Math.min(...lats)-0.02],
+       [Math.max(...lons)+0.02, Math.max(...lats)+0.02]],
+      { padding: 80, duration: 600, maxZoom: 14 }
+    );
+  }
+}
+
+function simColor(sim) {
+  const t = Math.max(0, Math.min(1, sim));
+  const r = Math.round(255 * (0.3 + 0.7 * t));
+  const g = Math.round(255 * 0.3 * t);
+  const b = Math.round(255 * (1 - t) * 0.3);
+  return `rgb(${r},${g},${b})`;
+}
+
+async function buildResultLayer(results) {
+  const idxMap = Object.fromEntries(results.map(r => [r.emb_idx, r]));
+  allResultFeatures = cellsGeojson.features
+    .filter(f => idxMap[f.properties.id] !== undefined)
+    .map(f => ({
+      ...f,
+      properties: {
+        ...f.properties,
+        color: simColor(idxMap[f.properties.id].sim),
+        rank: idxMap[f.properties.id].rank
+      }
+    }));
+  map.getSource('results').setData({ type: 'FeatureCollection', features: allResultFeatures });
+}
+
+function renderResultList(results) {
+  const list = document.getElementById('result-list');
+  list.innerHTML = '';
+  results.forEach(r => {
+    const c = cfg.cluster_colors[r.cluster];
+    const pct = (r.sim * 100).toFixed(1);
+    const profile = cfg.cluster_profiles && cfg.cluster_profiles[String(r.cluster)];
+    const cName = profile ? profile.name : `C${r.cluster}`;
+
+    const div = document.createElement('div');
+    div.className = 'result-item';
+    div.id = `result-${r.emb_idx}`;
+    div.innerHTML = `
+      <div class="result-rank">${r.rank}</div>
+      <div class="result-cluster-dot" style="background:${c}" title="${cName}"></div>
+      <div class="result-body">
+        <div class="result-sim">${pct}%</div>
+        <div class="result-sim-bar">
+          <div class="result-sim-fill" style="width:${pct}%;background:${simColor(r.sim)}"></div>
+        </div>
+        <div class="result-loc">${cName} · (${r.cx}, ${r.cy})</div>
+      </div>
+    `;
+    // 클릭 시 해당 위치로 지도 이동
+    div.onclick = () => flyToResult(r.lon, r.lat, r.emb_idx);
+    list.appendChild(div);
+  });
+}
+
+function flyToResult(lon, lat, emb_idx) {
+  // 이전 선택 해제
+  if (activeResultIdx !== -1)
+    document.getElementById(`result-${activeResultIdx}`)?.classList.remove('active');
+  activeResultIdx = emb_idx;
+  document.getElementById(`result-${emb_idx}`)?.classList.add('active');
+
+  // 지도 이동
+  map.flyTo({ center: [lon, lat], zoom: 14, duration: 700 });
+
+  // 선택 하이라이트
+  const feat = allResultFeatures.find(f => f.properties.id === emb_idx);
+  map.getSource('result-selected').setData(
+    feat ? { type: 'FeatureCollection', features: [feat] } : emptyFC()
+  );
+}
+
+// ── 모바일 여부 ───────────────────────────────────────────────────────────────
+function isMobile() { return window.innerWidth <= 768; }
+
+// ── 모바일 시트 토글 ──────────────────────────────────────────────────────────
+let sheetOpenState = { cluster: false, similarity: false };
+
+function toggleSheet(tab) {
+  if (!isMobile()) return;
+  const isOpen = sheetOpenState[tab];
+  sheetOpenState[tab] = !isOpen;
+  const el = document.getElementById(tab === 'cluster' ? 'sidebar-cluster' : 'sidebar-similarity');
+  el.classList.toggle('sheet-open', !isOpen);
+}
+
+// ── 탭 전환 ───────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-cluster').classList.toggle('active', tab === 'cluster');
+  document.getElementById('tab-similarity').classList.toggle('active', tab === 'similarity');
+
+  const clusterEl    = document.getElementById('sidebar-cluster');
+  const similarityEl = document.getElementById('sidebar-similarity');
+
+  if (isMobile()) {
+    // 모바일: sheet-hidden으로 비활성 탭 숨김, 활성 탭은 peek 상태로
+    if (tab === 'cluster') {
+      clusterEl.classList.remove('sheet-hidden');
+      similarityEl.classList.add('sheet-hidden');
+      similarityEl.classList.remove('sheet-open');
+      sheetOpenState.similarity = false;
+    } else {
+      similarityEl.classList.remove('sheet-hidden');
+      clusterEl.classList.add('sheet-hidden');
+      clusterEl.classList.remove('sheet-open');
+      sheetOpenState.cluster = false;
+    }
+  } else {
+    // 데스크탑: display flex/none
+    clusterEl.style.display    = tab === 'cluster' ? 'flex' : 'none';
+    similarityEl.style.display = tab === 'similarity' ? 'flex' : 'none';
+    // 혹시 남아있는 모바일 클래스 제거
+    clusterEl.classList.remove('sheet-hidden', 'sheet-open');
+    similarityEl.classList.remove('sheet-hidden', 'sheet-open');
+  }
+
+  simPopup.remove();
+
+  if (tab === 'cluster') {
+    if (map.getSource('query')) map.getSource('query').setData(emptyFC());
+    if (map.getSource('results')) map.getSource('results').setData(emptyFC());
+    if (map.getSource('result-selected')) map.getSource('result-selected').setData(emptyFC());
+  } else {
+    if (selectedId !== null && map.getLayer('cells-line'))
+      map.setFeatureState({ source: 'cells', id: selectedId }, { selected: false });
+    selectedId = null;
+    simSelectedCell = null;
+  }
+}
+
+const searchMode = 'point';
+
+// ── 초기 레이아웃 적용 ────────────────────────────────────────────────────────
+function applyLayout() {
+  const clusterEl    = document.getElementById('sidebar-cluster');
+  const similarityEl = document.getElementById('sidebar-similarity');
+  if (!clusterEl) return;
+
+  if (isMobile()) {
+    // 모바일: 인라인 display 제거 후 transform으로 제어
+    clusterEl.style.display    = '';
+    similarityEl.style.display = '';
+    if (activeTab === 'cluster') {
+      clusterEl.classList.remove('sheet-hidden');
+      similarityEl.classList.add('sheet-hidden');
+      similarityEl.classList.remove('sheet-open');
+    } else {
+      similarityEl.classList.remove('sheet-hidden');
+      clusterEl.classList.add('sheet-hidden');
+      clusterEl.classList.remove('sheet-open');
+    }
+  } else {
+    // 데스크탑: 클래스 제거 후 display 제어
+    clusterEl.classList.remove('sheet-hidden', 'sheet-open');
+    similarityEl.classList.remove('sheet-hidden', 'sheet-open');
+    clusterEl.style.display    = activeTab === 'cluster' ? 'flex' : 'none';
+    similarityEl.style.display = activeTab === 'similarity' ? 'flex' : 'none';
+  }
+}
+
+window.addEventListener('resize', applyLayout);
+
+// ── 시작 ──────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
